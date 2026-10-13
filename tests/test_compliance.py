@@ -8,6 +8,12 @@ Each test maps to one numbered DS24 required revision:
   3 no DS24 trust badge or promo scripts          7 displayed prices == prices.json
   4 no unrelated links                            8 refund page, no shipping language
 Plus brand rules: zero em dashes, required pages present, buy placeholders wired.
+
+General DS24 vendor checklist (2026-10-13), classes prefixed TestV:
+  V1 guarantee <= 60 days                         V5 thank-you is a full access page
+  V2 "Legal Information" page linked everywhere    V6 only DS24 payment links (Test3/Test4/Test7)
+  V3 delivery method on sales + thank-you page     V7 buy buttons carry price + one-time + no subscription
+  V4 exact withdrawal sentence on thank-you        V9 no income or earnings promises
 """
 import html
 import json
@@ -17,7 +23,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-REQUIRED_PAGES = ["index.html", "thank-you.html", "terms.html", "privacy.html", "refund.html", "contact.html"]
+REQUIRED_PAGES = ["index.html", "thank-you.html", "terms.html", "privacy.html", "refund.html", "contact.html", "legal.html"]
 HTML_FILES = sorted(ROOT.glob("*.html"))
 PRICES = json.loads((ROOT / "prices.json").read_text())
 CONTACT_EMAIL = "cooper@agentsetup.io"
@@ -252,8 +258,10 @@ class Test8RefundAndNoShipping(unittest.TestCase):
 
     def test_no_ship_substring_in_visible_text(self):
         # Stricter: avoid even "ownership"/"relationship" so a naive reviewer grep stays clean.
+        # Sole exception: the DS24-mandated VAT line, which must say "sole proprietorship".
         for name, (_, visible, _) in PAGES.items():
-            self.assertNotIn("ship", visible.lower(), f"{name}: 'ship' substring in visible text")
+            text = visible.lower().replace(VAT_LINE.lower(), "")
+            self.assertNotIn("ship", text, f"{name}: 'ship' substring in visible text")
 
     def test_refund_page_clear(self):
         visible = PAGES["refund.html"][1].lower()
@@ -263,6 +271,134 @@ class Test8RefundAndNoShipping(unittest.TestCase):
     def test_refund_linked_from_sales_page_and_footer(self):
         for name, (_, _, c) in PAGES.items():
             self.assertIn("refund.html", c.footer_links, f"{name}: footer missing refund.html")
+
+
+VAT_LINE = "VAT ID: Not applicable (United States sole proprietorship, not VAT-registered)"
+ADDRESS = "3320 Pacific Ave, Apt 2"
+COMPANY = "Company name: Agent Setup"
+OPERATOR = "Cooper Hathaway, sole proprietor"
+WITHDRAWAL = "The withdrawal from your account will be done by Digistore24."
+
+
+class _Anchors(HTMLParser):
+    """Collects (href, visible text) for every <a>."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.anchors, self._href, self._buf = [], None, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._href, self._buf = dict(attrs).get("href"), []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._buf.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href is not None:
+            self.anchors.append((self._href.strip(), re.sub(r"\s+", " ", "".join(self._buf)).strip()))
+            self._href = None
+
+
+def anchors(raw):
+    a = _Anchors()
+    a.feed(raw)
+    return a.anchors
+
+
+class TestV1GuaranteeMax60(unittest.TestCase):
+    def test_no_guarantee_over_60_days(self):
+        for name, (raw, visible, _) in PAGES.items():
+            for m in re.finditer(r"(\d+)[\s-]*(day|days)\b", visible, re.I):
+                self.assertLessEqual(int(m.group(1)), 60, f"{name}: {m.group(0)!r} exceeds 60 days")
+        self.assertIn("60-day money-back guarantee", PAGES["index.html"][1])
+
+
+class TestV2LegalInformation(unittest.TestCase):
+    def test_every_page_links_legal_information(self):
+        for name, (raw, _, c) in PAGES.items():
+            self.assertIn("legal.html", c.footer_links, f"{name}: footer missing legal.html")
+            footer = raw[raw.index("<footer"):]
+            self.assertIn(("legal.html", "Legal Information"), anchors(footer),
+                          f"{name}: footer link text must be exactly 'Legal Information'")
+
+    def test_legal_page_title_and_heading(self):
+        raw, visible, _ = PAGES["legal.html"]
+        self.assertIn("<title>Legal Information", raw)
+        self.assertRegex(raw, r"<h1>Legal Information</h1>")
+
+    def test_legal_page_has_complete_company_information(self):
+        raw = PAGES["legal.html"][0]
+        main = raw[raw.index("<main>"):raw.index("</main>")]  # footer repeats some facts; judge the page body only
+        c = _Collector()
+        c.feed(main)
+        visible = re.sub(r"\s+", " ", " ".join(c.text))
+        for needle in (COMPANY, OPERATOR, ADDRESS, "Marina Del Rey, CA 90292", "United States", CONTACT_EMAIL, VAT_LINE):
+            self.assertIn(needle, visible, f"legal.html missing {needle!r}")
+        self.assertIn(f"mailto:{CONTACT_EMAIL}", main)
+
+    def test_address_matches_contact_and_terms(self):
+        for name in ("contact.html", "terms.html", "legal.html"):
+            self.assertIn(ADDRESS, PAGES[name][1], f"{name}: address drifted")
+
+
+class TestV3DeliveryMethod(unittest.TestCase):
+    def test_delivery_stated_on_sales_and_thank_you(self):
+        for name in ("index.html", "thank-you.html"):
+            v = PAGES[name][1].lower()
+            for phrase in ("delivery method", "delivered remotely online", "no physical product",
+                           "deployed into your online tools", "source code delivered digitally", "live video call"):
+                self.assertIn(phrase, v, f"{name}: delivery statement missing {phrase!r}")
+
+
+class TestV4Withdrawal(unittest.TestCase):
+    def test_exact_withdrawal_sentence_prominent(self):
+        raw, visible, _ = PAGES["thank-you.html"]
+        self.assertIn(WITHDRAWAL, visible)
+        self.assertRegex(raw, r'class="card notice">\s*<p><strong>' + re.escape(WITHDRAWAL) + r"</strong></p>",
+                         "withdrawal sentence must be the bold lead of the highlighted notice card")
+
+
+class TestV5AccessPage(unittest.TestCase):
+    def test_thank_you_explains_how_and_when(self):
+        v = PAGES["thank-you.html"][1].lower()
+        for phrase in ("within two business days", "spam", "promotions", CONTACT_EMAIL,
+                       "if nothing arrives within two business days", "scoping session", "video session"):
+            self.assertIn(phrase, v, f"thank-you.html missing {phrase!r}")
+
+    # Different, legitimate service levels: unsubscribe processing and bank refund posting time.
+    OTHER_SLAS = {("privacy.html", "within 10 business days"), ("refund.html", "5 to 10 business days")}
+
+    def test_two_business_day_wording_consistent(self):
+        for name in ("index.html", "thank-you.html", "terms.html", "contact.html"):
+            self.assertIn("within two business days", PAGES[name][1].lower(), f"{name}: missing two-business-day promise")
+        for name, (_, visible, _) in PAGES.items():
+            for m in re.finditer(r"(?:within|\d+ to)\s+(\w+)\s+business\s+days?", visible, re.I):
+                if (name, m.group(0)) in self.OTHER_SLAS:
+                    continue
+                self.assertEqual(m.group(1).lower(), "two", f"{name}: inconsistent turnaround {m.group(0)!r}")
+
+
+class TestV7BuyButtonConditions(unittest.TestCase):
+    def test_buy_buttons_carry_conditions(self):
+        buys = [(h, t) for h, t in anchors(PAGES["index.html"][0]) if h in DS24_ORDER]
+        self.assertEqual({h for h, _ in buys}, DS24_ORDER, "both DS24 buy buttons must exist")
+        for href, text in buys:
+            for needle in ("$500", "one-time", "no subscription"):
+                self.assertIn(needle, text, f"buy button {href} text {text!r} missing {needle!r}")
+
+
+class TestV9NoEarningsPromises(unittest.TestCase):
+    BANNED = [r"\bearn(s|ed|ing|ings)?\b", r"\bincome\b", r"make\s+money", r"\bget\s+rich\b", r"\bpassive\b",
+              r"side\s+hustle", r"six[\s-]figures?", r"financial\s+freedom", r"\bwealth\b", r"\bmillionaire\b",
+              r"\bROI\b", r"\bper\s+(day|week|month)\b.*\$", r"\$\d[\d,]*\s*(/|per|a)\s*(day|week|month|year)"]
+
+    def test_no_income_or_earnings_promises(self):
+        for name, (raw, visible, _) in PAGES.items():
+            blob = all_strings(raw, visible)
+            for pat in self.BANNED:
+                m = re.search(pat, blob, re.I)
+                self.assertIsNone(m, f"{name}: earnings/income language {m.group(0) if m else ''!r}")
 
 
 class TestCopyRules(unittest.TestCase):

@@ -12,7 +12,7 @@ DOMAIN = "agentsetup.agency"
 ROOT = Path(__file__).resolve().parent
 CA = next((c for c in ("/etc/ssl/cert.pem", "/opt/homebrew/etc/ca-certificates/cert.pem") if os.path.exists(c)), None)
 CTX = ssl.create_default_context(cafile=CA)
-PAGES = ["index.html", "thank-you.html", "terms.html", "privacy.html", "refund.html", "contact.html", "styles.css"]
+PAGES = ["index.html", "thank-you.html", "terms.html", "privacy.html", "refund.html", "contact.html", "legal.html", "styles.css"]
 
 
 def token():
