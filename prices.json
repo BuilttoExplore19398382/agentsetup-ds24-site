@@ -1,0 +1,18 @@
+{
+  "currency": "USD",
+  "products": {
+    "starter": {
+      "name": "Agent Setup Starter",
+      "ds24_product_id": 721490,
+      "price": 500,
+      "buy_anchor": "#buy-starter"
+    },
+    "hourly": {
+      "name": "Hourly Consulting",
+      "ds24_product_id": 721520,
+      "price": 500,
+      "buy_anchor": "#buy-hourly"
+    }
+  },
+  "source": "agentsetup-website/partners.html (DS24 salespage): Starter card data-ds=721490 at $500 (commit 6e12bd0 era) and 'Hourly Consulting at $500' linking checkout-ds24.com/product/721520 (commit 6e12bd0, 2026-08-14). Starter $500 also matches pricing.html and the Stripe Starter link. UNVERIFIED against the live Digistore24 vendor listing: the public order forms could not be fetched on 2026-10-13."
+}
