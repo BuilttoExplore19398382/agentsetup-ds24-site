@@ -138,7 +138,12 @@ class Test3NoDigistoreBadgesOrScripts(unittest.TestCase):
     def test_no_digistore_in_any_link_or_src(self):
         for name, (_, _, c) in PAGES.items():
             for tag, attr, val in c.links:
+                if val in DS24_ORDER:
+                    continue  # the approved products' order forms are required; only badges/scripts are banned
                 self.assertNotRegex(val.lower(), r"digistore|ds24", f"{name}: {tag}[{attr}]={val}")
+
+
+DS24_ORDER = {f"https://www.checkout-ds24.com/product/{p['ds24_product_id']}" for p in PRICES["products"].values()}
 
 
 class Test4NoUnrelatedLinks(unittest.TestCase):
@@ -149,6 +154,8 @@ class Test4NoUnrelatedLinks(unittest.TestCase):
                 if val.startswith("#"):
                     continue
                 if val == f"mailto:{CONTACT_EMAIL}":
+                    continue
+                if val in DS24_ORDER and name == "index.html":
                     continue
                 if val.startswith(ALLOWED_EXTERNAL_HOSTS) and tag == "link":
                     continue
@@ -226,13 +233,12 @@ class Test7PricesMatch(unittest.TestCase):
             card = m.group(1)
             self.assertIn(p["name"], card)
             self.assertRegex(card, rf'<div class="price">\${p["price"]:,}\b', f"{key} card price mismatch")
-            self.assertIn(f'href="{p["buy_anchor"]}"', card, f"{key} buy placeholder missing")
+            self.assertIn(f'href="https://www.checkout-ds24.com/product/{p["ds24_product_id"]}"', card, f"{key} buy button must open its own DS24 order form")
 
-    def test_buy_buttons_are_placeholders_with_ds24_note(self):
+    def test_only_approved_order_forms_linked(self):
         raw = PAGES["index.html"][0]
-        for p in PRICES["products"].values():
-            self.assertIn(f'href="{p["buy_anchor"]}"', raw)
-            self.assertRegex(raw, rf"<!--[^>]*DS24 order-form URL[^>]*{p['ds24_product_id']}[^>]*-->")
+        found = set(re.findall(r"https://www\.checkout-ds24\.com/product/\d+", raw))
+        self.assertEqual(found, DS24_ORDER, "only the approved products' DS24 order forms may be linked")
 
 
 class Test8RefundAndNoShipping(unittest.TestCase):
